@@ -45,7 +45,7 @@ with st.spinner("Henter data fra Podio..."):
 
 # Søgefelter vises med det samme
 radgiver_input = st.text_input("Søg efter rådgiver")
-status_input = st.text_input("Søg efter kundenavn (søger i 'titel')")
+status_input = st.text_input("Søg efter kundenavn")
 
 # Filtrering
 if radgiver_input:
@@ -71,7 +71,13 @@ kolonner = [col for col in kolonner if col in df.columns]
 df_visning = df[kolonner].copy()
 
 # Opret ekstra kolonne til at markere rækker med match
-df_visning["row_class"] = df.apply(lambda row: "highlight-row" if row["hvemharbolden"].strip() == row["radgiver"].strip() else "", axis=1)
+if not df_visning.empty:
+    df_visning["row_class"] = df_visning.apply(
+        lambda row: "highlight-row" if row["hvemharbolden"].strip() == row["radgiver"].strip() else "",
+        axis=1
+    )
+else:
+    df_visning["row_class"] = ""
 
 visningsnavne = {
     "titel": "Kundenavn",
@@ -88,6 +94,9 @@ df_visning = df_visning.rename(columns=visningsnavne)
 # Tabel-styling
 st.markdown("""
     <style>
+    table {
+        width: 100%;
+    }
     table th {
         text-align: left !important;
         font-weight: bold !important;
@@ -100,8 +109,9 @@ st.markdown("""
         word-break: break-word;
         overflow-wrap: break-word;
     }
+    table td:nth-child(2),
     table td:nth-child(3) {
-        max-width: 200px;
+        max-width: 180px;
         white-space: normal;
         word-break: break-word;
         overflow-wrap: break-word;
@@ -118,11 +128,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Konstruer HTML-tabel med styling
 def style_rows(row):
     cls = row["row_class"]
     return f'<tr class="{cls}">' + "".join([f"<td>{row[col]}</td>" for col in df_visning.columns if col != "row_class"]) + "</tr>"
 
 table_html = "<table><thead><tr>" + "".join([f"<th>{col}</th>" for col in df_visning.columns if col != "row_class"]) + "</tr></thead><tbody>"
-table_html += "".join(df_visning.apply(style_rows, axis=1).tolist())
+if not df_visning.empty:
+    table_html += "".join(df_visning.apply(style_rows, axis=1).tolist())
+else:
+    table_html += '<tr><td colspan="7">Ingen resultater fundet.</td></tr>'
 table_html += "</tbody></table>"
+
 st.write(table_html, unsafe_allow_html=True)

@@ -31,7 +31,7 @@ with st.spinner("Henter data fra Podio..."):
             if df[col].dtype == "object":
                 df[col] = df[col].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
 
-        # Erstat 'Designer' eller 'Rådgiver' med navnet fra den tilsvarende kolonne uden e-mail
+        # Erstat 'Designer' eller 'Rådgiver' med navn fra tilsvarende kolonne
         def clean_name(name):
             return name.split(" (email")[0].strip()
 
@@ -43,15 +43,17 @@ with st.spinner("Henter data fra Podio..."):
 
     df = fetch_data()
 
-# Søgefelter vises med det samme
-radgiver_input = st.text_input("Søg efter rådgiver")
-status_input = st.text_input("Søg efter kundenavn")
+# 🧠 Samlet søgefelt
+global_search = st.text_input(
+    "",
+    placeholder="🔎 Søg i hele tabellen (kundenavn, rådgiver, status, kommentar osv.)"
+)
 
-# Filtrering
-if radgiver_input:
-    df = df[df["radgiver"].fillna("").str.lower().str.contains(radgiver_input.lower())]
-if status_input:
-    df = df[df["titel"].fillna("").str.lower().str.contains(status_input.lower())]
+# Filtrering med global søgning
+if global_search:
+    søg = global_search.lower()
+    søg_i = ["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"]
+    df = df[df[søg_i].apply(lambda row: row.astype(str).str.lower().str.contains(søg).any(), axis=1)]
 
 st.write(f"Fundet {len(df)} resultater.")
 
@@ -67,7 +69,6 @@ if "stagingsite" in df.columns:
 # Definér kolonner og visningsnavne
 kolonner = ["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"]
 kolonner = [col for col in kolonner if col in df.columns]
-
 df_visning = df[kolonner].copy()
 
 # Opret ekstra kolonne til at markere rækker med match
@@ -88,7 +89,6 @@ visningsnavne = {
     "hvemharbolden": "Hvem har bolden",
     "stagingsite": "Staging site"
 }
-
 df_visning = df_visning.rename(columns=visningsnavne)
 
 # Tabel-styling
@@ -128,7 +128,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Konstruer HTML-tabel med styling
+# HTML-tabel konstruktion
 def style_rows(row):
     cls = row["row_class"]
     return f'<tr class="{cls}">' + "".join([f"<td>{row[col]}</td>" for col in df_visning.columns if col != "row_class"]) + "</tr>"

@@ -5,11 +5,15 @@ import pandas as pd
 # Tving bredt layout og lyst tema
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
-# Overskrift og beskrivelse
-st.title("Website Kundestatus")
-st.write("Søg efter rådgiver og/eller kundenavn for at filtrere resultatet.")
+# Titel og filter-knapper i samme række
+col1, col2 = st.columns([8, 1])
+with col1:
+    st.title("Website Kundestatus")
+with col2:
+    kun_vis_rode = st.checkbox("🔴", key="kun_rod")
+    kun_vis_gronne = st.checkbox("🟢", key="kun_gron")
 
-# Vis spinner mens data hentes
+# Hent data
 with st.spinner("Henter data fra Podio..."):
     @st.cache_data(show_spinner=False)
     def fetch_data():
@@ -19,19 +23,16 @@ with st.spinner("Henter data fra Podio..."):
         data = response.json()
         df = pd.json_normalize(data)
 
-        # Omdøb kolonner
         df = df.rename(columns={
             "web-designer": "webdesigner",
             "hvem-har-bolden": "hvemharbolden",
             "staging-site": "stagingsite"
         })
 
-        # Rens alle tekstfelter
         for col in df.columns:
             if df[col].dtype == "object":
                 df[col] = df[col].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
 
-        # Erstat 'Designer' eller 'Rådgiver' med navn fra tilsvarende kolonne
         def clean_name(name):
             return name.split(" (email")[0].strip()
 
@@ -43,21 +44,18 @@ with st.spinner("Henter data fra Podio..."):
 
     df = fetch_data()
 
-# 🧠 Samlet søgefelt
+# Global søgning
 global_search = st.text_input(
     "",
     placeholder="🔎 Søg i hele tabellen (kundenavn, rådgiver, status, kommentar osv.)"
 )
 
-# Filtrering med global søgning
 if global_search:
     søg = global_search.lower()
     søg_i = ["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"]
     df = df[df[søg_i].apply(lambda row: row.astype(str).str.lower().str.contains(søg).any(), axis=1)]
 
-st.write(f"Fundet {len(df)} resultater.")
-
-# Gør staging-links klikbare
+# Klikbare links
 def make_clickable(link):
     if pd.isna(link) or not link.strip().startswith("http"):
         return ""
@@ -66,20 +64,29 @@ def make_clickable(link):
 if "stagingsite" in df.columns:
     df["stagingsite"] = df["stagingsite"].apply(make_clickable)
 
-# Definér kolonner og visningsnavne
+# Kolonner og visning
 kolonner = ["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"]
-kolonner = [col for col in kolonner if col in df.columns]
 df_visning = df[kolonner].copy()
 
-# Opret ekstra kolonne til at markere rækker med match
+# Highlight rows
 if not df_visning.empty:
     df_visning["row_class"] = df_visning.apply(
-        lambda row: "highlight-row" if row["hvemharbolden"].strip() == row["radgiver"].strip() else "",
-        axis=1
+        lambda row: "highlight-row-red" if row["hvemharbolden"].strip() == row["radgiver"].strip()
+        else "highlight-row-green" if row["hvemharbolden"].strip() == row["webdesigner"].split(" (email")[0].strip()
+        else "", axis=1
     )
 else:
     df_visning["row_class"] = ""
 
+# Filtrering
+if kun_vis_rode:
+    df_visning = df_visning[df_visning["row_class"] == "highlight-row-red"]
+elif kun_vis_gronne:
+    df_visning = df_visning[df_visning["row_class"] == "highlight-row-green"]
+
+st.write(f"Fundet {len(df_visning)} resultater.")
+
+# Visningsnavne
 visningsnavne = {
     "titel": "Kundenavn",
     "radgiver": "Rådgiver",
@@ -91,12 +98,10 @@ visningsnavne = {
 }
 df_visning = df_visning.rename(columns=visningsnavne)
 
-# Tabel-styling
+# Styling
 st.markdown("""
     <style>
-    table {
-        width: 100%;
-    }
+    table { width: 100%; }
     table th {
         text-align: left !important;
         font-weight: bold !important;
@@ -107,28 +112,28 @@ st.markdown("""
         max-width: 150px;
         white-space: normal;
         word-break: break-word;
-        overflow-wrap: break-word;
     }
     table td:nth-child(2),
     table td:nth-child(3) {
         max-width: 180px;
         white-space: normal;
         word-break: break-word;
-        overflow-wrap: break-word;
     }
     table td:nth-child(5) {
         max-width: 700px;
         white-space: normal;
         word-break: break-word;
-        overflow-wrap: break-word;
     }
-    .highlight-row {
+    .highlight-row-red {
         background-color: rgba(255, 0, 0, 0.1);
+    }
+    .highlight-row-green {
+        background-color: rgba(0, 255, 0, 0.08);
     }
     </style>
 """, unsafe_allow_html=True)
 
-# HTML-tabel konstruktion
+# HTML-tabel
 def style_rows(row):
     cls = row["row_class"]
     return f'<tr class="{cls}">' + "".join([f"<td>{row[col]}</td>" for col in df_visning.columns if col != "row_class"]) + "</tr>"

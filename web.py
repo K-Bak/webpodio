@@ -17,6 +17,10 @@ with col2:
         kun_vis_gronne = st.checkbox("🟢", key="kun_gron")
         kun_vis_morkerod = st.checkbox("⚫", key="kun_morkerod")
 
+# Hent søgeord fra URL
+query_params = st.query_params
+url_search = query_params.get("search", "")
+
 # Hent data
 with st.spinner("Henter data fra Podio..."):
     @st.cache_data(show_spinner=False)
@@ -44,7 +48,7 @@ with st.spinner("Henter data fra Podio..."):
                                        else clean_name(row["radgiver"]) if row["hvemharbolden"].strip().lower() == "rådgiver"
                                        else row["hvemharbolden"], axis=1)
 
-        # Mørkerød flag: ældre end 3 måneder OG ikke Web: online eller ANNULLERET
+        # Mørkerød flag
         def er_morkerod(kommentar, status):
             match = re.match(r"(\d{2})[/-](\d{2})[/-](\d{2,4})", kommentar)
             if not match:
@@ -64,10 +68,11 @@ with st.spinner("Henter data fra Podio..."):
 
     df = fetch_data()
 
-# Global søgning
+# Global søgning (og nu fra URL hvis sat)
 global_search = st.text_input(
     "",
-    placeholder="🔎 Søg i hele tabellen (kundenavn, rådgiver, status, kommentar osv.)"
+    placeholder="🔎 Søg i hele tabellen (kundenavn, rådgiver, status, kommentar osv.)",
+    value=url_search
 )
 
 if global_search:

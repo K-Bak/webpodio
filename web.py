@@ -23,7 +23,7 @@ url_search = query_params.get("search", "")
 
 # Hent data
 with st.spinner("Henter data fra Podio..."):
-    @st.cache_data(show_spinner=False)
+    @st.cache_data(show_spinner=False, ttl=1200)  # <-- automatisk opdatering hver 20. minut
     def fetch_data():
         url = "https://workflow-automation.podio.com/podiofeed.php?c=7116&a=582163&f=7874"
         response = requests.get(url)

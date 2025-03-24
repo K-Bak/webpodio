@@ -8,7 +8,7 @@ import re
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
 # Titel og avancerede filtre i samme række
-col1, col2 = st.columns([12, 1])
+col1, col2 = st.columns([18, 1])
 with col1:
     st.title("Website Kundestatus")
 with col2:

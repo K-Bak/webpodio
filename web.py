@@ -4,10 +4,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import re
 
-# Tving bredt layout og lyst tema
+# Tving bredt layout
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
-# Titel og avancerede filtre i samme række
+# Titel og filtre
 col1, col2 = st.columns([18, 1])
 with col1:
     st.title("Website Kundestatus")

@@ -3,9 +3,11 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import re
+from dotenv import load_dotenv
+import os
 
-# Tving bredt layout
-st.set_page_config(layout="wide", initial_sidebar_state="expanded")
+load_dotenv()
+KODE = os.getenv("LOGIN_KODE")
 
 # Kodebeskyttelse
 def check_access():
@@ -15,7 +17,7 @@ def check_access():
     if not st.session_state.adgang_ok:
         with st.sidebar:
             kode = st.text_input("Adgangskode", type="password")
-            if kode == "web123":
+            if kode == KODE:
                 st.session_state.adgang_ok = True
                 st.rerun()
             elif kode:

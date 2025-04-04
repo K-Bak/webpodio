@@ -7,6 +7,26 @@ import re
 # Tving bredt layout
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 
+# Kodebeskyttelse
+def check_access():
+    if "adgang_ok" not in st.session_state:
+        st.session_state.adgang_ok = False
+
+    if not st.session_state.adgang_ok:
+        with st.sidebar:
+            kode = st.text_input("Adgangskode", type="password")
+            if kode == "web123":
+                st.session_state.adgang_ok = True
+                st.rerun()
+            elif kode:
+                st.error("Forkert kode.")
+        return False
+
+    return True
+
+if not check_access():
+    st.stop()
+
 # Titel og filtre
 col1, col2 = st.columns([18, 1])
 with col1:

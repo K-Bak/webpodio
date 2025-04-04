@@ -9,6 +9,11 @@ import os
 load_dotenv()
 KODE = os.getenv("LOGIN_KODE")
 
+if "adgang_ok" in st.session_state and st.session_state.adgang_ok:
+    st.set_page_config(layout="wide", initial_sidebar_state="auto")
+else:
+    st.set_page_config(layout="wide", initial_sidebar_state="expanded")
+
 # Kodebeskyttelse
 def check_access():
     if "adgang_ok" not in st.session_state:

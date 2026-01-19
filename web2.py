@@ -8,7 +8,7 @@ import os
 # ---------------------------------------------------------
 # Secrets / config
 # ---------------------------------------------------------
-# Rettelse: Fjernet Python 3.10 specifik type-hinting for kompatibilitet med 3.9
+# Python 3.9 kompatibel (ingen str | None syntaks)
 def get_secret(key, section=None):
     if section and section in st.secrets and key in st.secrets[section]:
         return str(st.secrets[section][key])
@@ -102,9 +102,9 @@ def fetch_podio_data():
 
         access_token = auth_res.json()['access_token']
 
-        # 2. Hent Items
+        # 2. Hent Items (Her var fejlen før - rettet til 'Bearer')
         items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
-        headers = {"Authorization": f"OAuth {access_token}"}
+        headers = {"Authorization": f"Bearer {access_token}"}
         
         items_res = requests.get(items_url, headers=headers)
         

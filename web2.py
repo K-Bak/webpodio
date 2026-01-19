@@ -4,57 +4,37 @@ import requests
 from datetime import datetime, timedelta
 import re
 import os
-# Vi importerer denne for at kunne se netværks-headere
-from streamlit.web.server.websocket_headers import _get_websocket_headers
 
 # ---------------------------------------------------------
-# SIKKERHED: TJEK DOMÆNE (REFERER)
+# SIKKERHED: TJEK URL NØGLE (kilde=generaxion)
 # ---------------------------------------------------------
-def check_domain_access():
+def check_url_access():
     """
-    Tillader kun adgang hvis trafikken kommer fra tilladte domæner eller localhost.
+    Tillader kun adgang, hvis URL'en indeholder ?kilde=generaxion
+    Dette sikrer, at man skal komme fra dit specifikke link.
     """
-    try:
-        headers = _get_websocket_headers()
-        if headers is None:
-            return True # Hvis vi ikke kan læse headers (sker nogle gange lokalt), tillad
+    # Hent parametre fra URL'en
+    query_params = st.query_params
+    kilde = query_params.get("kilde", "")
 
-        referer = headers.get("Referer", "")
-        origin = headers.get("Origin", "")
-        
-        # Slå sammen til én streng for nem søgning
-        source_info = (str(referer) + str(origin)).lower()
+    # Vi tillader adgang hvis:
+    # 1. ?kilde=generaxion er i URL'en
+    # 2. ELLER hvis vi kører lokalt (localhost) for nemmere udvikling
+    er_lokal = "localhost" in str(st.query_params) # Simpel tjek for lokal test
+    
+    if kilde != "generaxion" and not er_lokal:
+        st.error("⛔ Adgang nægtet.")
+        st.warning("Denne applikation kræver et specifikt link for at blive åbnet.")
+        st.info("Brug venligst linket fra serp.generaxion.tech")
+        st.stop()
 
-        # Liste over tilladte steder
-        # Vi tillader localhost så du kan teste på din Mac
-        # Vi tillader serp.generaxion.tech
-        ALLOWED_DOMAINS = [
-            "serp.generaxion.tech",
-            "localhost",
-            "127.0.0.1"
-        ]
+# Kør tjekket med det samme
+check_url_access()
 
-        # Tjek om en af de tilladte domæner findes i kilden
-        access_granted = any(domain in source_info for domain in ALLOWED_DOMAINS)
-
-        if not access_granted:
-            st.error("⛔ Adgang nægtet.")
-            st.warning("Denne applikation kan kun tilgås via serp.generaxion.tech")
-            # Valgfrit: Vis hvad serveren så (til debugging - fjern i produktion hvis du vil)
-            # st.write(f"Detected source: {source_info}") 
-            st.stop()
-            
-    except Exception as e:
-        # Hvis teknikken fejler, tillader vi adgang for ikke at ødelægge appen utilsigtet,
-        # eller du kan vælge st.stop() her for højere sikkerhed.
-        print(f"Kunne ikke tjekke headers: {e}")
-
-# Kør tjekket som det allerførste
-check_domain_access()
 # ---------------------------------------------------------
 # Secrets / config
 # ---------------------------------------------------------
-# Python 3.9 kompatibel (ingen str | None syntaks)
+# Python 3.9 kompatibel
 def get_secret(key, section=None):
     if section and section in st.secrets and key in st.secrets[section]:
         return str(st.secrets[section][key])
@@ -148,7 +128,7 @@ def fetch_podio_data():
 
         access_token = auth_res.json()['access_token']
 
-        # 2. Hent Items (Her var fejlen før - rettet til 'Bearer')
+        # 2. Hent Items
         items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
         headers = {"Authorization": f"Bearer {access_token}"}
         

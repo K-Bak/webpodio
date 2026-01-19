@@ -6,35 +6,9 @@ import re
 import os
 
 # ---------------------------------------------------------
-# SIKKERHED: TJEK URL NØGLE (kilde=generaxion)
-# ---------------------------------------------------------
-def check_url_access():
-    """
-    Tillader kun adgang, hvis URL'en indeholder ?kilde=generaxion
-    Dette sikrer, at man skal komme fra dit specifikke link.
-    """
-    # Hent parametre fra URL'en
-    query_params = st.query_params
-    kilde = query_params.get("kilde", "")
-
-    # Vi tillader adgang hvis:
-    # 1. ?kilde=generaxion er i URL'en
-    # 2. ELLER hvis vi kører lokalt (localhost) for nemmere udvikling
-    er_lokal = "localhost" in str(st.query_params) # Simpel tjek for lokal test
-    
-    if kilde != "generaxion" and not er_lokal:
-        st.error("⛔ Adgang nægtet.")
-        st.warning("Denne applikation kræver et specifikt link for at blive åbnet.")
-        st.info("Brug venligst linket fra serp.generaxion.tech")
-        st.stop()
-
-# Kør tjekket med det samme
-check_url_access()
-
-# ---------------------------------------------------------
 # Secrets / config
 # ---------------------------------------------------------
-# Python 3.9 kompatibel
+# Python 3.9 kompatibel (ingen str | None syntaks)
 def get_secret(key, section=None):
     if section and section in st.secrets and key in st.secrets[section]:
         return str(st.secrets[section][key])
@@ -128,7 +102,7 @@ def fetch_podio_data():
 
         access_token = auth_res.json()['access_token']
 
-        # 2. Hent Items
+        # 2. Hent Items (Her var fejlen før - rettet til 'Bearer')
         items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
         headers = {"Authorization": f"Bearer {access_token}"}
         

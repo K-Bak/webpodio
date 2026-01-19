@@ -4,7 +4,53 @@ import requests
 from datetime import datetime, timedelta
 import re
 import os
+# Vi importerer denne for at kunne se netværks-headere
+from streamlit.web.server.websocket_headers import _get_websocket_headers
 
+# ---------------------------------------------------------
+# SIKKERHED: TJEK DOMÆNE (REFERER)
+# ---------------------------------------------------------
+def check_domain_access():
+    """
+    Tillader kun adgang hvis trafikken kommer fra tilladte domæner eller localhost.
+    """
+    try:
+        headers = _get_websocket_headers()
+        if headers is None:
+            return True # Hvis vi ikke kan læse headers (sker nogle gange lokalt), tillad
+
+        referer = headers.get("Referer", "")
+        origin = headers.get("Origin", "")
+        
+        # Slå sammen til én streng for nem søgning
+        source_info = (str(referer) + str(origin)).lower()
+
+        # Liste over tilladte steder
+        # Vi tillader localhost så du kan teste på din Mac
+        # Vi tillader serp.generaxion.tech
+        ALLOWED_DOMAINS = [
+            "serp.generaxion.tech",
+            "localhost",
+            "127.0.0.1"
+        ]
+
+        # Tjek om en af de tilladte domæner findes i kilden
+        access_granted = any(domain in source_info for domain in ALLOWED_DOMAINS)
+
+        if not access_granted:
+            st.error("⛔ Adgang nægtet.")
+            st.warning("Denne applikation kan kun tilgås via serp.generaxion.tech")
+            # Valgfrit: Vis hvad serveren så (til debugging - fjern i produktion hvis du vil)
+            # st.write(f"Detected source: {source_info}") 
+            st.stop()
+            
+    except Exception as e:
+        # Hvis teknikken fejler, tillader vi adgang for ikke at ødelægge appen utilsigtet,
+        # eller du kan vælge st.stop() her for højere sikkerhed.
+        print(f"Kunne ikke tjekke headers: {e}")
+
+# Kør tjekket som det allerførste
+check_domain_access()
 # ---------------------------------------------------------
 # Secrets / config
 # ---------------------------------------------------------

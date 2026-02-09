@@ -21,7 +21,7 @@ KODE = get_secret("LOGIN_KODE")
 # Hent Podio keys
 PODIO_CLIENT_ID = get_secret("client_id", section="podio")
 PODIO_CLIENT_SECRET = get_secret("client_secret", section="podio")
-PODIO_APP_ID = get_secret("app_id", section="podio") 
+PODIO_APP_ID = get_secret("app_id", section="podio")
 PODIO_APP_TOKEN = get_secret("app_token", section="podio")
 
 # Fail-fast
@@ -29,6 +29,8 @@ missing = []
 if not KODE: missing.append("LOGIN_KODE")
 if not PODIO_CLIENT_ID: missing.append("podio.client_id")
 if not PODIO_CLIENT_SECRET: missing.append("podio.client_secret")
+if not PODIO_APP_ID: missing.append("podio.app_id")
+if not PODIO_APP_TOKEN: missing.append("podio.app_token")
 
 if missing:
     st.set_page_config(layout="wide", initial_sidebar_state="expanded")
@@ -95,59 +97,95 @@ def fetch_podio_data():
             "client_secret": PODIO_CLIENT_SECRET
         }
         auth_res = requests.post(auth_url, data=auth_data)
-        
+
         if auth_res.status_code != 200:
             st.error(f"Kunne ikke logge ind i Podio. Tjek secrets. Fejl: {auth_res.text}")
             return pd.DataFrame()
 
-        access_token = auth_res.json()['access_token']
+        access_token = auth_res.json().get("access_token", "")
+        if not access_token:
+            st.error("Podio login lykkedes, men access_token mangler i svaret.")
+            return pd.DataFrame()
 
-        # 2. Hent Items (Her var fejlen før - rettet til 'Bearer')
+        # 2. Hent Items
         items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
         headers = {"Authorization": f"Bearer {access_token}"}
-        
+
         items_res = requests.get(items_url, headers=headers)
-        
+
         if items_res.status_code != 200:
             st.error(f"Kunne ikke hente items. Fejl: {items_res.text}")
             return pd.DataFrame()
 
         raw_items = items_res.json()
-        
+
+        # ---------------------------------------------------------
+        # Hjælper: robust udtræk af staging link / url
+        # ---------------------------------------------------------
+        def extract_url(value):
+            """
+            Podio link/embed felter kan komme som dict:
+            {"url": "...", "title": "..."} eller embed-varianter.
+            Nogle felter kan også være str direkte.
+            """
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value.strip()
+            if isinstance(value, dict):
+                return (value.get("url") or value.get("embed_url") or value.get("link") or "").strip()
+            return str(value).strip()
+
         # 3. Parse JSON strukturen til fladt format
         processed_rows = []
-        for item in raw_items['items']:
+        items = raw_items.get("items", [])
+        for item in items:
             row = {
-                "titel": item.get('title', ''),
-                "item_id": item.get('item_id')
+                "titel": item.get("title", ""),
+                "item_id": item.get("item_id")
             }
-            
-            # Gennemgå alle felter i itemet
-            for field in item['fields']:
-                external_id = field['external_id'] # F.eks. "web-designer"
-                values = field['values']
-                
-                # Uddrag værdi baseret på felttype
+
+            fields = item.get("fields", [])
+            for field in fields:
+                external_id = field.get("external_id", "")
+                values = field.get("values", [])
+
                 val_str = ""
                 if not values:
                     val_str = ""
-                elif field['type'] == 'app': # Relationsfelt
-                    val_str = values[0]['value'].get('title', '')
-                elif field['type'] == 'contact': # Kontaktperson
-                    val_str = values[0]['value'].get('name', '')
-                elif field['type'] == 'date': # Dato
-                    start = values[0].get('start_date_utc', '')
-                    val_str = start
-                elif field['type'] == 'category': # Kategori
-                    val_str = values[0]['value'].get('text', '')
                 else:
-                    # Standard tekst/tal
-                    val_str = values[0].get('value', '')
-                
+                    ftype = field.get("type", "")
+
+                    if ftype == "app":  # Relationsfelt
+                        val_str = values[0].get("value", {}).get("title", "")
+
+                    elif ftype == "contact":  # Kontaktperson
+                        val_str = values[0].get("value", {}).get("name", "")
+
+                    elif ftype == "date":  # Dato
+                        start = values[0].get("start_date_utc", "") or values[0].get("start", "") or ""
+                        val_str = start
+
+                    elif ftype == "category":  # Kategori
+                        val_str = values[0].get("value", {}).get("text", "")
+
+                    elif ftype in ["link", "embed"]:  # <-- FIX: staging site er typisk link/embed
+                        # value kan være dict med url
+                        val_str = extract_url(values[0].get("value"))
+
+                    else:
+                        # Standard tekst/tal (kan stadig være dict i nogle setups, så vi gør det robust)
+                        val = values[0].get("value", "")
+                        if isinstance(val, dict):
+                            # Prøv at få url hvis den ligner et link-objekt, ellers stringify
+                            val_str = extract_url(val) or str(val)
+                        else:
+                            val_str = val
+
                 row[external_id] = str(val_str)
-            
+
             processed_rows.append(row)
-            
+
         df = pd.DataFrame(processed_rows)
         return df
 
@@ -155,20 +193,38 @@ def fetch_podio_data():
         st.error(f"Podio API fejl: {e}")
         return pd.DataFrame()
 
-# Behandling af data (samme logik som før)
+# ---------------------------------------------------------
+# Behandling af data
+# ---------------------------------------------------------
 def process_dataframe(df):
     if df.empty:
         return pd.DataFrame(columns=["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"])
 
+    # Robust mapping: hvis staging ikke rammer, prøv at finde en kolonne der indeholder 'staging'
+    # (hvis external_id er ændret i Podio)
+    staging_col = None
+    for c in df.columns:
+        if str(c).strip().lower() == "staging-site":
+            staging_col = c
+            break
+    if staging_col is None:
+        for c in df.columns:
+            if "staging" in str(c).strip().lower():
+                staging_col = c
+                break
+
     # Rename kolonner
-    df = df.rename(columns={
+    rename_map = {
         "web-designer": "webdesigner",
         "hvem-har-bolden": "hvemharbolden",
-        "staging-site": "stagingsite",
-        "radgiver": "radgiver", 
+        "radgiver": "radgiver",
         "status": "status",
         "kommentarer": "kommentarer"
-    })
+    }
+    if staging_col:
+        rename_map[staging_col] = "stagingsite"
+
+    df = df.rename(columns=rename_map)
 
     # Rens tekst
     for col in df.columns:
@@ -179,7 +235,7 @@ def process_dataframe(df):
         return str(name).split(" (email")[0].strip()
 
     # Sikr kolonner findes
-    for required in ["kommentarer", "status", "radgiver", "webdesigner", "hvemharbolden"]:
+    for required in ["kommentarer", "status", "radgiver", "webdesigner", "hvemharbolden", "stagingsite"]:
         if required not in df.columns:
             df[required] = ""
 
@@ -208,7 +264,7 @@ def process_dataframe(df):
             return False
 
     df["morkerod"] = df.apply(lambda row: er_morkerod(row["kommentarer"], row["status"]), axis=1)
-    
+
     return df
 
 with st.spinner("Henter data sikkert fra Podio API..."):
@@ -230,16 +286,23 @@ if global_search:
     for col in søg_i:
         if col not in df.columns:
             df[col] = ""
-    
+
     df = df[df[søg_i].apply(lambda row: row.astype(str).str.lower().str.contains(søg).any(), axis=1)]
 
 # ---------------------------------------------------------
 # Klikbare links
 # ---------------------------------------------------------
 def make_clickable(link):
-    if pd.isna(link) or len(str(link)) < 5: 
+    if pd.isna(link) or len(str(link).strip()) < 5:
         return ""
     clean_link = str(link).strip()
+
+    # Hvis Podio link-feltet kom som "{'url': '...'}" (skulle ikke ske nu),
+    # så prøv at redde det ved at plukke en url ud.
+    m = re.search(r"(https?://[^\s'\"}]+)", clean_link)
+    if m:
+        clean_link = m.group(1)
+
     if not clean_link.startswith("http"):
         clean_link = "http://" + clean_link
     return f'<a href="{clean_link}" target="_blank" rel="noopener noreferrer">Link til side</a>'

@@ -107,10 +107,10 @@ def fetch_podio_data():
             st.error("Podio login lykkedes, men access_token mangler i svaret.")
             return pd.DataFrame()
 
-        # 2. Hent Items
-        items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
         headers = {"Authorization": f"Bearer {access_token}"}
 
+        # 2. Hent Items
+        items_url = f"https://api.podio.com/item/app/{PODIO_APP_ID}/?limit=500"
         items_res = requests.get(items_url, headers=headers)
 
         if items_res.status_code != 200:
@@ -120,25 +120,63 @@ def fetch_podio_data():
         raw_items = items_res.json()
 
         # ---------------------------------------------------------
-        # Hjælper: robust udtræk af staging link / url
+        # Hjælpere
         # ---------------------------------------------------------
-        def extract_url(value):
-            """
-            Podio link/embed felter kan komme som dict:
-            {"url": "...", "title": "..."} eller embed-varianter.
-            Nogle felter kan også være str direkte.
-            """
-            if value is None:
+        def extract_url_from_dict(d):
+            # typiske felter man kan støde på
+            if not isinstance(d, dict):
                 return ""
-            if isinstance(value, str):
-                return value.strip()
-            if isinstance(value, dict):
-                return (value.get("url") or value.get("embed_url") or value.get("link") or "").strip()
-            return str(value).strip()
+            return (d.get("resolved_url") or d.get("original_url") or d.get("url") or d.get("embed_url") or d.get("link") or "").strip()
+
+        embed_cache = {}
+        file_cache = {}
+
+        def resolve_embed_url(embed_id):
+            if not embed_id:
+                return ""
+            try:
+                embed_id_int = int(embed_id)
+            except Exception:
+                return ""
+
+            if embed_id_int in embed_cache:
+                return embed_cache[embed_id_int]
+
+            r = requests.get(f"https://api.podio.com/embed/{embed_id_int}", headers=headers)
+            if r.status_code != 200:
+                embed_cache[embed_id_int] = ""
+                return ""
+
+            data = r.json() if isinstance(r.json(), dict) else {}
+            url = (data.get("resolved_url") or data.get("original_url") or "").strip()
+            embed_cache[embed_id_int] = url
+            return url
+
+        def resolve_file_url(file_id):
+            if not file_id:
+                return ""
+            try:
+                file_id_int = int(file_id)
+            except Exception:
+                return ""
+
+            if file_id_int in file_cache:
+                return file_cache[file_id_int]
+
+            r = requests.get(f"https://api.podio.com/file/{file_id_int}", headers=headers)
+            if r.status_code != 200:
+                file_cache[file_id_int] = ""
+                return ""
+
+            data = r.json() if isinstance(r.json(), dict) else {}
+            url = (data.get("link") or "").strip()
+            file_cache[file_id_int] = url
+            return url
 
         # 3. Parse JSON strukturen til fladt format
         processed_rows = []
         items = raw_items.get("items", [])
+
         for item in items:
             row = {
                 "titel": item.get("title", ""),
@@ -148,37 +186,58 @@ def fetch_podio_data():
             fields = item.get("fields", [])
             for field in fields:
                 external_id = field.get("external_id", "")
+                ftype = field.get("type", "")
                 values = field.get("values", [])
 
                 val_str = ""
-                if not values:
-                    val_str = ""
-                else:
-                    ftype = field.get("type", "")
+                if values:
+                    v0 = values[0]
 
                     if ftype == "app":  # Relationsfelt
-                        val_str = values[0].get("value", {}).get("title", "")
+                        val_str = v0.get("value", {}).get("title", "")
 
                     elif ftype == "contact":  # Kontaktperson
-                        val_str = values[0].get("value", {}).get("name", "")
+                        val_str = v0.get("value", {}).get("name", "")
 
                     elif ftype == "date":  # Dato
-                        start = values[0].get("start_date_utc", "") or values[0].get("start", "") or ""
+                        start = v0.get("start_date_utc", "") or v0.get("start", "") or ""
                         val_str = start
 
                     elif ftype == "category":  # Kategori
-                        val_str = values[0].get("value", {}).get("text", "")
+                        val_str = v0.get("value", {}).get("text", "")
 
-                    elif ftype in ["link", "embed"]:  # <-- FIX: staging site er typisk link/embed
-                        # value kan være dict med url
-                        val_str = extract_url(values[0].get("value"))
+                    elif ftype == "link":
+                        # klassisk link felt: value kan være dict {"url": "..."}
+                        vv = v0.get("value")
+                        if isinstance(vv, dict):
+                            val_str = (vv.get("url") or "").strip()
+                        elif isinstance(vv, str):
+                            val_str = vv.strip()
+                        else:
+                            val_str = str(vv) if vv is not None else ""
+
+                    elif ftype == "embed":
+                        # IMPORTANT: jeres staging-site ser ud til at være embed-type:
+                        # "staging-site": {"embed": embed_id, "file": file_id}
+                        # Den kan ligge direkte på v0 eller inde i v0["value"] afhængigt af Podio payload
+                        embed_id = v0.get("embed")
+                        file_id = v0.get("file")
+
+                        if (embed_id is None or file_id is None) and isinstance(v0.get("value"), dict):
+                            embed_id = embed_id or v0["value"].get("embed")
+                            file_id = file_id or v0["value"].get("file")
+
+                        resolved = resolve_embed_url(embed_id)
+                        if not resolved:
+                            resolved = resolve_file_url(file_id)
+
+                        val_str = resolved
 
                     else:
-                        # Standard tekst/tal (kan stadig være dict i nogle setups, så vi gør det robust)
-                        val = values[0].get("value", "")
+                        # Standard tekst/tal (kan stadig være dict i nogle setups)
+                        val = v0.get("value", "")
                         if isinstance(val, dict):
-                            # Prøv at få url hvis den ligner et link-objekt, ellers stringify
-                            val_str = extract_url(val) or str(val)
+                            val_str = extract_url_from_dict(val) or str(val)
                         else:
                             val_str = val
 
@@ -201,7 +260,6 @@ def process_dataframe(df):
         return pd.DataFrame(columns=["titel", "radgiver", "webdesigner", "status", "kommentarer", "hvemharbolden", "stagingsite"])
 
     # Robust mapping: hvis staging ikke rammer, prøv at finde en kolonne der indeholder 'staging'
-    # (hvis external_id er ændret i Podio)
     staging_col = None
     for c in df.columns:
         if str(c).strip().lower() == "staging-site":
@@ -297,8 +355,6 @@ def make_clickable(link):
         return ""
     clean_link = str(link).strip()
 
-    # Hvis Podio link-feltet kom som "{'url': '...'}" (skulle ikke ske nu),
-    # så prøv at redde det ved at plukke en url ud.
     m = re.search(r"(https?://[^\s'\"}]+)", clean_link)
     if m:
         clean_link = m.group(1)

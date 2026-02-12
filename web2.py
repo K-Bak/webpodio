@@ -217,21 +217,33 @@ def fetch_podio_data():
                             val_str = str(vv) if vv is not None else ""
 
                     elif ftype == "embed":
-                        # IMPORTANT: jeres staging-site ser ud til at være embed-type:
-                        # "staging-site": {"embed": embed_id, "file": file_id}
-                        # Den kan ligge direkte på v0 eller inde i v0["value"] afhængigt af Podio payload
-                        embed_id = v0.get("embed")
-                        file_id = v0.get("file")
+                        # Hent rå data for embed/file
+                        embed_data = v0.get("embed")
+                        file_data = v0.get("file")
 
-                        if (embed_id is None or file_id is None) and isinstance(v0.get("value"), dict):
-                            embed_id = embed_id or v0["value"].get("embed")
-                            file_id = file_id or v0["value"].get("file")
+                        # Hvis data ligger i en nested 'value' key (sker nogle gange)
+                        if embed_data is None and file_data is None and isinstance(v0.get("value"), dict):
+                            embed_data = v0["value"].get("embed")
+                            file_data = v0["value"].get("file")
 
-                        resolved = resolve_embed_url(embed_id)
-                        if not resolved:
-                            resolved = resolve_file_url(file_id)
+                        # 1. Prøv at finde URL direkte (Optimering: Sparer API kald)
+                        found_url = ""
+                        if isinstance(embed_data, dict):
+                            found_url = embed_data.get("original_url") or embed_data.get("resolved_url") or embed_data.get("url")
+                        
+                        if found_url:
+                            val_str = found_url
+                        else:
+                            # 2. Hvis ingen URL, så udtræk ID og slå op via API
+                            # Sikr at vi har et ID (int/str) og ikke et dictionary
+                            embed_id = embed_data.get("embed_id") if isinstance(embed_data, dict) else embed_data
+                            file_id = file_data.get("file_id") if isinstance(file_data, dict) else file_data
 
-                        val_str = resolved
+                            resolved = resolve_embed_url(embed_id)
+                            if not resolved:
+                                resolved = resolve_file_url(file_id)
+                            
+                            val_str = resolved
 
                     else:
                         # Standard tekst/tal (kan stadig være dict i nogle setups)
